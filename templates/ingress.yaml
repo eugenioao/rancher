@@ -1,0 +1,18 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  labels:
+    app: SERVICE
+  name: SERVICE
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: NAME
+      http:
+        paths:
+  tls:
+    - hosts:
+        - NAME
+status:
+  loadBalancer:
+    ingress:
