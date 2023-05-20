@@ -1,0 +1,20 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: SERVICE
+spec:
+  internalTrafficPolicy: Cluster
+  ipFamilies:
+    - IPv4
+  ipFamilyPolicy: SingleStack
+  ports:
+    - name: https
+      port: 443
+      protocol: TCP
+      targetPort: TARGET_PORT
+  selector:
+    app: SERVICE
+  sessionAffinity: None
+  type: ClusterIP
+status:
+  loadBalancer: {}
