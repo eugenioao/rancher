@@ -1,4 +1,4 @@
-# Converter do Rancher 1.6 para o Rancher 27
+# Converter do Rancher 1.6 para o Rancher 2.7
 <img src="imagens/rancher-1_6-2_7.jpg" style="max-width: 85%;" align="center" />
 
 Os scripts foram criados para ajudar na conversão das Stacks do Rancher 1.6 para o Rancher 2.7 com o menor ajuste possível. Eles não farão a conversão final automática por ser necessário criar os namespaces de cada projeto antes de importar os arquivos das aplicações/serviços. Este processo poderá ser realizado após a conversão de uma Stack ou parte dela.
