@@ -1,0 +1,23 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  labels:
+    app: aplicacao-frontend
+  name: aplicacao-frontend-ingress
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: aplicacao-frontend-hmg.dominio.com.br
+      http:
+        paths:
+          - backend:
+              service:
+                name: aplicacao-frontend-service
+                port:
+                  number: 443
+            path: /aplicacao-frontend
+            pathType: Prefix
+  tls:
+    - hosts:
+        - aplicacao-frontend-hmg.domainio.com.br
+
