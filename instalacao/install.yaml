@@ -1,0 +1,183 @@
+---
+- name: Iniciando a instalacao do Rancher 2.7
+  hosts: all
+  vars:
+    vg: vg0
+    lvs: 
+      - lvol_rancher
+      - lvol_longhorn
+    devices: 
+      - /dev/mapper/vg0-lvol_rancher
+      - /dev/mapper/vg0-lvol_longhorn
+    sizes:
+      - 100g
+      - 200g
+
+    packages:
+      - wget
+      - dnf-utils
+      - iscsi-initiator-utils
+
+    directories:
+      - /var/lib/rancher
+      - /var/lib/longhorn
+      - /etc/rancher/rke2
+      - /var/log/auditlog
+
+  tasks:
+
+  - name: Instalacao dos pacotes
+    yum:
+      name: "{{ item }}"
+      state: present
+    loop: "{{ packages }}"
+      
+  - name: Criando o volume logico para o Rancher
+    community.general.lvol:
+      vg: "{{ vg }}"
+      lv: "{{ lvs[0] }}"
+      size: "{{ sizes[0] }}"
+  
+  - name: Criando o volume logico para o Longhorn
+    community.general.lvol:
+      vg: "{{ vg }}"
+      lv: "{{ lvs[1] }}"
+      size: "{{ sizes[1] }}"
+  
+  - name: Formatando os volumes
+    filesystem:
+      fstype: xfs
+      dev: "{{ item }}"
+      force: no
+    loop: "{{ devices }}"
+
+  - name: Criando os diretorios
+    file:
+      path: "{{ item }}"
+      state: directory
+      recurse: yes
+    loop: "{{ directories }}"
+  
+  - name: Montando o volume do Rancher
+    ansible.posix.mount:
+      src: "{{ devices[0] }}"
+      path: "{{ directories[0] }}"
+      state: mounted
+      fstype: xfs
+
+  - name: Montando o volume do Longhorn 
+    ansible.posix.mount:
+      src: "{{ devices[1] }}"
+      path: "{{ directories[1] }}"
+      state: mounted
+      fstype: xfs
+    when: inventory_hostname in groups['workers']
+
+  - name: Disabilitando o SWAP 
+    shell: | 
+      swapoff -a
+      
+  - name: Removendo entrada do swap no /etc/fstab
+    ansible.builtin.lineinfile:
+      path: /etc/fstab
+      state: absent
+      regexp: 'swap.*swap'
+
+  - name: Copiando o arquivo do Logrotate 
+    ansible.builtin.copy:
+      src: logrotate
+      dest: /etc/logrotate.d/syslog
+      owner: root
+      group: root
+      mode: '0644'
+  
+  - name: Copiando arquivo da interfaces para RKE2
+    ansible.builtin.copy:
+      src: rke2.conf
+      dest: /etc/NetworkManager/conf.d/rke2.conf
+      owner: root
+      group: root
+      mode: '0644'
+  
+  - name: Disablitando o SELinux
+    ansible.posix.selinux:
+      state: disabled
+
+  - name: Parando e desabilitando o firewalld
+    service:
+      name: firewalld
+      state: stopped
+      enabled: False
+
+  - name: Adcionando caminho e variavel de ambiente para o kubectl
+    ansible.builtin.lineinfile:
+      path: /root/.bashrc
+      line: export KUBECONFIG=/etc/rancher/rke2/rke2.yaml PATH=$PATH:/var/lib/rancher/rke2/bin
+
+  - name: Alterando o /etc/sysctl.conf
+    ansible.builtin.lineinfile:
+      path: /etc/sysctl.conf
+      line: "{{ item }}"
+    loop:
+      - net.ipv4.ip_forward = 1
+      - net.bridge.bridge-nf-call-iptables = 1
+      - net.bridge.bridge-nf-call-arptables = 1
+      - net.bridge.bridge-nf-call-ip6tables = 1
+  
+  - name: Reiniciando o servidor
+    ansible.builtin.reboot:
+
+  - name: Aguardando servidor reiniciar
+    local_action:
+      module: wait_for
+        host={{ groups['masters'][0] }}
+        port=22
+        delay=10
+        timeout=120
+      become: false
+
+  - name: Copiando o config yaml rancher para o master
+    ansible.builtin.copy:
+      src: config.yaml
+      dest: /etc/rancher/rke2/config.yaml
+      owner: root
+      group: root
+      mode: '0644'
+    when: inventory_hostname == groups['masters'][0]
+
+  - name: Instalando o RKE2 nos masters (server)
+    ansible.builtin.shell: curl -sfL https://get.rke2.io | sh -
+    when: inventory_hostname in groups['masters']
+
+  - name: Instalando o RKE2 nos workers (agent)
+    ansible.builtin.shell: curl -sfL https://get.rke2.io | INSTALL_RKE2_TYPE="agent" sh -
+    when: inventory_hostname in groups['workers']
+
+  - name: Iniciando o serviço rke2-server no 1º master
+    ansible.builtin.service:
+      name: rke2-server
+      state: started
+    when: inventory_hostname == groups['masters'][0]
+    register: rke2status
+    until: rke2status.status.ActiveState == "active"
+    retries: 15
+    delay: 20
+
+  - name: Pegar o token no 1º master
+    set_fact:
+      token: "{{ lookup('file', '/var/lib/rancher/rke2/server/token') }}"
+    when: inventory_hostname == groups['masters'][0]
+
+  - name: Copiando o config.yaml para os demais masters/workers
+    ansible.builtin.template:
+      src: config.yaml.j2
+      dest: /etc/rancher/rke2/config.yaml
+      owner: root
+      group: root
+      mode: '0644'
+    when: not inventory_hostname == groups['masters'][0]
+
+  - name: Fim da Instalacao pelo script
+    debug:
+      msg: Fim da instalação. Será necessário iniciar manualmente o serviço rke2-server nos outros masters e dos workers.
+

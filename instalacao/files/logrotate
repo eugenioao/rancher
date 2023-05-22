@@ -1,0 +1,17 @@
+/var/log/cron
+/var/log/maillog
+/var/log/messages
+/var/log/secure
+/var/log/spooler
+/var/log/auditlog/*
+{
+    rotate 30
+    daily
+    size 10M
+    compress
+    missingok
+    sharedscripts
+    postrotate
+        /usr/bin/systemctl kill -s HUP rsyslog.service >/dev/null 2>&1 || true
+    endscript
+}

@@ -1,0 +1,16 @@
+[masters:vars]
+url_console=rancher.dominio.com.br
+
+[masters]
+rancher-01
+rancher-02
+rancher-03
+
+[workers]
+rancher-04
+rancher-05
+rancher-06
+rancher-07
+rancher-08
+rancher-09
+rancher-10
