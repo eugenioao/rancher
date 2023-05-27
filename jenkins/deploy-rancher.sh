@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/bash +x
 #
 # Script...: deploy-rancher.sh
 # Descrição: Faz a criacao e o deploy no racnher 2.7
@@ -28,6 +28,7 @@
 #	4º - Nome da Aplicacao
 #	5º - Diretorio dos arquivos de configuracao do gitlab
 #
+set +x
 
 if [ $# -lt 5 ] ; then
    echo " ATENÇÃO"
@@ -55,10 +56,8 @@ KubectlPatchCS() {
 
       ${vBIN}/kubectl get ${vSTGTIPO} ${vAPLICACAO}-${vSTGTIPO} -n ${vNAMESPACE} -o yaml| ${vBIN}/yq '.data' > ${vSTGTIPO}.tmp 2>&1
       while read vLINHA ; do
-        vCHAVE="$(echo $vLINHA|awk '{print $1}'|awk -F':' '{print $1}')"
-        vVALOR="$(echo $vLINHA|awk '{print $2}')"
-        vSTRING="${vCHAVE}=${vVALOR}"
-
+        vCHAVE="$(echo $vLINHA|awk -F': ' '{print $1}')"
+        vSTRING="${vLINHA}"
         vRESP=`eval "grep '${vSTRING}' ${vSTGTIPO}.properties"`
         if [ -z "$vRESP" ]; then
 	   echo "[-] Removendo chave [${vCHAVE}] e valor [****] do ${vAPLICACAO}-${vSTGTIPO}"
@@ -68,10 +67,9 @@ KubectlPatchCS() {
 
       ${vBIN}/kubectl get ${vSTGTIPO} ${vAPLICACAO}-${vSTGTIPO} -n ${vNAMESPACE} -o yaml| ${vBIN}/yq '.data' > ${vSTGTIPO}.tmp 2>&1
       while read vLINHA ; do
-        vCHAVE="$(echo $vLINHA|awk -F'=' '{print $1}')"
-        vVALOR="$(echo $vLINHA|awk -F'=' '{print $2}')"
-        vSTRING="${vCHAVE}: ${vVALOR}"
-
+        vCHAVE="$(echo $vLINHA|awk -F': ' '{print $1}')"
+        vVALOR="$(echo $vLINHA|awk -F': ' '{print $2}')"
+        vSTRING="${vLINHA}"
         vR=`eval "grep '${vSTRING}' ${vSTGTIPO}.tmp"`
         if [ -z "$vR" ]; then
 	   echo "[-] Adicionando chave [${vCHAVE}] e valor [****] no ${vAPLICACAO}-${vSTGTIPO}"
@@ -81,12 +79,34 @@ KubectlPatchCS() {
 
 }
 
+################################################################
+# LimitRangeNS: Define um limite padrão para o namespace
+################################################################
+
+LimitRangeNS() {
+
+echo "apiVersion: v1
+kind: LimitRange
+metadata:
+  name: ${vNAMESPACE}-limitrange
+spec:
+  limits:
+  - max:
+      cpu: "1"
+      memory: 512Mi
+    type: Container
+" > limitrangerns.yaml
+if [ -f limitrangerns.yaml ] ; then
+   ${vBIN}/kubectl apply -f limitrangerns.yaml -n ${vNAMESPACE} > /dev/null 2>&1
+fi
+}
+
 echo "[+] Iniciando o processo de criação/atualização"
 
 #echo "    [-] Criando diretorio temporario e copiando arquivos"
 vTMP=$(mktemp -d)
 cd ${vTMP}
-cp -a $5/* .
+cp -a $5/* . > /dev/null 2>&1
 
 # Define qual ambiente usar
 export KUBECONFIG=${vHOME}/etc/config/${vAMBIENTE}/kubeconfig.yaml
@@ -118,6 +138,7 @@ if [ -z "$(grep -x ${vNAMESPACE} namespaces.tmp)" ]; then
       exit 1
    fi
    echo " - OK"
+   LimitRangeNS
 
 fi
 
@@ -141,7 +162,15 @@ if [ -f "configmap.properties" ] ; then
    ${vBIN}/kubectl get configmap -n ${vNAMESPACE} > configmap.tmp 2>&1
    if [ -z "$(grep ${vAPLICACAO}-configmap configmap.tmp)" ]; then
       echo -n "[+] Criando a confimap ${vAPLICACAO}-configmap"
-      ${vBIN}/kubectl create configmap ${vAPLICACAO}-configmap --from-env-file=configmap.properties -n ${vNAMESPACE} > /dev/null 2>&1
+
+      > configmap.properties.tmp
+      while read vLINHA ; do
+        vCHAVE="$(echo $vLINHA|awk -F': ' '{print $1}')"
+        vVALOR="$(echo $vLINHA|awk -F': ' '{print $2}')"
+        echo "${vCHAVE}=${vVALOR}" >> configmap.properties.tmp
+      done < configmap.properties
+
+      ${vBIN}/kubectl create configmap ${vAPLICACAO}-configmap --from-env-file=configmap.properties.tmp -n ${vNAMESPACE} > /dev/null 2>&1
       if [ $? -eq 1 ]; then
 	 echo -e "\nERRO ao criar a configmap ${vAPLICACAO}-configmap no namespace ${vNAMESPACE}"
          exit 1
@@ -159,7 +188,16 @@ if [ -f "secret.properties" ] ; then
    #echo "[+] Verificando o secret ${vAPLICACAO}-secret do namespace ${vNAMESPACE}"
    if [ -z "$(grep ${vAPLICACAO}-secret secrets.tmp)" ]; then
       echo -n "[+] Criando a secret ${vAPLICACAO}-secret"
-      ${vBIN}/kubectl create secret generic ${vAPLICACAO}-secret --from-env-file=secret.properties -n ${vNAMESPACE} > /dev/null 2>&1
+
+      > secret.properties.tmp
+      while read vLINHA ; do
+        vCHAVE="$(echo $vLINHA|awk -F': ' '{print $1}')"
+        vVALOR="$(echo $vLINHA|awk -F': ' '{print $2}')"
+        vVALOR=$(echo -n ${vVALOR}|base64 -d)
+        echo "${vCHAVE}=${vVALOR}" >> secret.properties.tmp
+      done < secret.properties
+
+      ${vBIN}/kubectl create secret generic ${vAPLICACAO}-secret --from-env-file=secret.properties.tmp -n ${vNAMESPACE} > /dev/null 2>&1
       if [ $? -eq 1 ]; then
 	 echo -e "\nERRO ao criar a secret ${vAPLICACAO}-secret no namespace ${vNAMESPACE}"
          exit 1
@@ -212,6 +250,9 @@ else
 
    case "$vAMBIENTE" in
 	prd|prod)
+                # A forma correta de efetuar uma alteracao de imagem
+                # kubectl set -n redic-api image deployment/redic-api-hmg redic-api-hmg=registry.tse.jus.br:5000/redic-api:RC
+
 		${vBIN}/kubectl apply -f deployment.yaml -n ${vNAMESPACE} > /dev/null 2>&1
 		if [ $? -eq 1 ]; then
 		   echo -e "\nERRO ao atualizar a aplicacao ${vAPLICACAO} no namespace ${vNAMESPACE}"
@@ -234,6 +275,6 @@ else
    echo " - OK"
 fi
 cd
-rm -rf $vTMP
+#rm -rf $vTMP
 
 echo "[*] Fim da execução."
