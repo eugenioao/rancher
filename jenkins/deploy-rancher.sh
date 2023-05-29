@@ -101,6 +101,23 @@ if [ -f limitrangerns.yaml ] ; then
 fi
 }
 
+################################################################
+# Sair: Faz a limpeza do /tmp/tmp.* e sai do script
+################################################################
+
+Sair() {
+
+   cd
+   rm -rf $vTMP
+   if [ -z "$1" ]; then
+      echo "[*] Fim da execução."
+   else
+      echo "[*] Fim da execução com falha."
+   fi
+   exit $1
+
+}
+
 echo "[+] Iniciando o processo de criação/atualização"
 
 #echo "    [-] Criando diretorio temporario e copiando arquivos"
@@ -119,7 +136,7 @@ if [ -z "$(grep ${vPROJETO} projetos.tmp)" ]; then
    ${vBIN}/rancher projects create ${vPROJETO} > /dev/null 2>&1
    if [ $? -ne 0 ]; then
       echo -e "\nERRO ao criar o ${vPROJETO}"
-      exit 1
+      Sair 1
    fi
    echo " - OK"
 fi
@@ -135,7 +152,7 @@ if [ -z "$(grep -x ${vNAMESPACE} namespaces.tmp)" ]; then
    ${vBIN}/rancher namespace create ${vNAMESPACE} > /dev/null 2>&1
    if [ $? -ne 0 ]; then
       echo -e "\nERRO ao criar o namespace ${vNAMESPACE} no ${vPROJETO}"
-      exit 1
+      Sair 1
    fi
    echo " - OK"
    LimitRangeNS
@@ -150,7 +167,7 @@ if [ -z "$(grep ^registry secrets.tmp)" ]; then
    ${vBIN}/kubectl apply -f ${vHOME}/etc/config/registry.yaml -n ${vNAMESPACE} > /dev/null 2>&1
    if [ $? -ne 0 ]; then
       echo -e "\nERRO ao criar a secret da registry no Projeto ${vPROJETO}"
-      exit 1
+      Sair 1
    fi
    echo " - OK"
 
@@ -173,7 +190,7 @@ if [ -f "configmap.properties" ] ; then
       ${vBIN}/kubectl create configmap ${vAPLICACAO}-configmap --from-env-file=configmap.properties.tmp -n ${vNAMESPACE} > /dev/null 2>&1
       if [ $? -eq 1 ]; then
 	 echo -e "\nERRO ao criar a configmap ${vAPLICACAO}-configmap no namespace ${vNAMESPACE}"
-         exit 1
+         Sair 1
       fi
       echo " - OK"
    else
@@ -200,7 +217,7 @@ if [ -f "secret.properties" ] ; then
       ${vBIN}/kubectl create secret generic ${vAPLICACAO}-secret --from-env-file=secret.properties.tmp -n ${vNAMESPACE} > /dev/null 2>&1
       if [ $? -eq 1 ]; then
 	 echo -e "\nERRO ao criar a secret ${vAPLICACAO}-secret no namespace ${vNAMESPACE}"
-         exit 1
+         Sair 1
       fi
       echo " - OK"
    else
@@ -215,7 +232,7 @@ if [ -f service.yaml ] ; then
    ${vBIN}/kubectl apply -f service.yaml -n ${vNAMESPACE} > /dev/null 2>&1
    if [ $? -eq 1 ]; then
       echo -e "\nERRO ao criar o service da aplicacao ${vAPLICACAO} no namespace ${vNAMESPACE}"
-      exit 1
+      Sair 1
    fi
    echo " - OK"
 fi
@@ -225,7 +242,7 @@ if [ -f ingress.yaml ] ; then
    ${vBIN}/kubectl apply -f ingress.yaml -n ${vNAMESPACE} > /dev/null 2>&1
    if [ $? -eq 1 ]; then
       echo -e "\nERRO ao criar o ingress da aplicacao ${vAPLICACAO} no namespace ${vNAMESPACE}"
-      exit 1
+      Sair 1
    fi
    echo " - OK"
 fi
@@ -242,7 +259,7 @@ if [ -z "$(grep ${vAPLICACAO} pod.tmp)" ]; then
    ${vBIN}/kubectl apply -f deployment.yaml -n ${vNAMESPACE} > /dev/null 2>&1
    if [ $? -eq 1 ]; then
       echo -e "\nERRO ao criar a aplicacao ${vAPLICACAO} no namespace ${vNAMESPACE}"
-      exit 1
+      Sair 1
    fi
    echo " - OK"
 else
@@ -256,7 +273,7 @@ else
 		${vBIN}/kubectl apply -f deployment.yaml -n ${vNAMESPACE} > /dev/null 2>&1
 		if [ $? -eq 1 ]; then
 		   echo -e "\nERRO ao atualizar a aplicacao ${vAPLICACAO} no namespace ${vNAMESPACE}"
-		   exit 1
+		   Sair 1
 		fi
 	;;
 	dsv|hmg)
@@ -264,17 +281,15 @@ else
 		${vBIN}/kubectl rollout restart deployment/${vAPLICACAO} -n ${vNAMESPACE} > /dev/null 2>&1
 		if [ $? -eq 1 ]; then
 		   echo -e "\nERRO ao efetuar o redeploy da aplicacao ${vAPLICACAO} no namespace ${vNAMESPACE}"
-		   exit 1
+		   Sair 1
 		fi
 	;;
 	*)
 		echo -e "\nERRO. Ambiente rancher não identificado."
-		exit 1
+		Sair 1
 	;;
    esac
    echo " - OK"
 fi
-cd
-#rm -rf $vTMP
 
-echo "[*] Fim da execução."
+Sair
